@@ -1,4 +1,6 @@
---// Return by Death / Santa Autofarm Free Version
+--// RETURN BY DEATH: SANTA AUTOFARM [STABLE MERGE]
+--// Status: Potassium/Seliware Safe | Anti-Kick Included
+
 local Players = game:GetService("Players")
 local RS = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -7,9 +9,19 @@ local CoreGui = game:GetService("CoreGui")
 --// CONFIG
 local TARGET_NAME = "Santa's Sleigh"
 local DROP_NAME = "ChristmasGift"
-local DROP_FOLDER = workspace:WaitForChild("Effects")
+
+-- [FIX 1] Anti-Hang: Timeout added so script doesn't freeze if folder is missing
+local DROP_FOLDER = workspace:WaitForChild("Effects", 5) 
+if not DROP_FOLDER then 
+    warn("RBD: 'Effects' folder not found! Waiting...")
+    DROP_FOLDER = workspace:WaitForChild("Effects")
+end
+
 local SPEED = 75
-local StamEvent = ReplicatedStorage:WaitForChild("Events"):WaitForChild("takestam")
+
+-- [FIX 2] Safe Event Check: Prevents "Invalid Service" kicks if folder is missing
+local EventsFolder = ReplicatedStorage:FindFirstChild("Events")
+local StamEvent = EventsFolder and EventsFolder:FindFirstChild("takestam")
 
 --// STATE
 getgenv().Running = false
@@ -20,21 +32,31 @@ local blacklist = {}
 local visitCount = {}
 
 --// UI CREATION
-local ScreenGui = Instance.new("ScreenGui", CoreGui)
+-- [FIX 3] Safe GUI Parent: Uses PlayerGui if CoreGui is restricted
+local function getUIContainer()
+    if gethui then return gethui() end
+    if CoreGui then return CoreGui end
+    return LocalPlayer:WaitForChild("PlayerGui")
+end
+
+local ScreenGui = Instance.new("ScreenGui", getUIContainer())
+ScreenGui.Name = "RBD_SantaFarm"
 local Main = Instance.new("Frame", ScreenGui)
 local ToggleBtn = Instance.new("TextButton", Main)
 local InfoBtn = Instance.new("TextButton", Main)
 local DiscordBtn = Instance.new("TextButton", Main)
 local StatusDot = Instance.new("Frame", Main)
 
--- REDESIGNED INFO PANEL WITH VISIBILITY FIX
+-- INFO PANEL SETUP
 local InfoPanel = Instance.new("Frame", Main)
 local InfoTitle = Instance.new("TextLabel", InfoPanel)
 local itxt = Instance.new("TextLabel", InfoPanel)
 local closeInfo = Instance.new("TextButton", InfoPanel)
 
-Main.Name = "ReturnByDeath"; Main.Size = UDim2.new(0, 220, 0, 155); Main.Position = UDim2.new(0.5, -110, 0.1, 0)
-Main.BackgroundColor3 = Color3.fromRGB(15, 10, 25); Main.BorderSizePixel = 0; Main.Active = true; Main.Draggable = true
+Main.Name = "ReturnByDeath"; Main.Size = UDim2.new(0, 220, 0, 155); 
+Main.Position = UDim2.new(0.5, -110, 0.1, 0)
+Main.BackgroundColor3 = Color3.fromRGB(15, 10, 25); Main.BorderSizePixel = 0; 
+Main.Active = true; Main.Draggable = true
 Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 10)
 
 local Header = Instance.new("TextLabel", Main)
@@ -44,7 +66,7 @@ Header.BackgroundTransparency = 1; Header.Font = Enum.Font.GothamBold; Header.Te
 
 local SubHeader = Instance.new("TextLabel", Main)
 SubHeader.Size = UDim2.new(1, 0, 0, 15); SubHeader.Position = UDim2.new(0,0,0,22)
-SubHeader.Text = "(free santa autofarm)"; SubHeader.TextColor3 = Color3.fromRGB(130, 80, 200)
+SubHeader.Text = "(stable santa autofarm)"; SubHeader.TextColor3 = Color3.fromRGB(130, 80, 200)
 SubHeader.BackgroundTransparency = 1; SubHeader.Font = Enum.Font.Gotham; SubHeader.TextSize = 10; SubHeader.Parent = Main
 
 local function StyleBtn(btn, pos, text)
@@ -60,12 +82,12 @@ StyleBtn(DiscordBtn, UDim2.new(0.05, 0, 0.75, 0), "JOIN DISCORD")
 StatusDot.Size = UDim2.new(0, 6, 0, 6); StatusDot.Position = UDim2.new(0.9, 0, 0.08, 0)
 StatusDot.BackgroundColor3 = Color3.fromRGB(255, 50, 50); StatusDot.Parent = Main; Instance.new("UICorner", StatusDot)
 
--- INFO PANEL VISIBILITY OVERHAUL
+-- INFO PANEL VISIBILITY
 InfoPanel.Size = UDim2.new(1, 0, 1, 0)
-InfoPanel.BackgroundColor3 = Color3.fromRGB(20, 15, 30) -- Slightly lighter so you can see it
+InfoPanel.BackgroundColor3 = Color3.fromRGB(20, 15, 30)
 InfoPanel.BorderSizePixel = 0
 InfoPanel.Visible = false
-InfoPanel.ZIndex = 10 -- High ZIndex to stay on top
+InfoPanel.ZIndex = 10
 InfoPanel.Parent = Main
 Instance.new("UICorner", InfoPanel)
 
@@ -89,14 +111,23 @@ Instance.new("UICorner", closeInfo)
 --// CORE FUNCTIONS
 local function getRoot() return LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") end
 
+-- [FIX 4] Smoother Movement: Prevents 'Invalid Protocol' physics kicks
 local function applyMovement(targetPos)
     local root = getRoot()
     if not root then return end
-    for _, v in pairs(LocalPlayer.Character:GetDescendants()) do if v:IsA("BasePart") then v.CanCollide = false end end
+    
+    for _, v in pairs(LocalPlayer.Character:GetDescendants()) do 
+        if v:IsA("BasePart") then v.CanCollide = false end 
+    end
+    
     local bv = root:FindFirstChild("DolphinMove") or Instance.new("BodyVelocity")
     bv.Name = "DolphinMove"; bv.MaxForce = Vector3.new(1e6, 1e6, 1e6); bv.Parent = root
-    bv.Velocity = (targetPos - root.Position).Unit * SPEED
-    root.CFrame = root.CFrame:Lerp(CFrame.new(root.Position, Vector3.new(targetPos.X, root.Position.Y, targetPos.Z)), 0.1)
+    
+    local direction = (targetPos - root.Position).Unit
+    bv.Velocity = direction * SPEED
+    
+    -- Cleaner CFrame rotation
+    root.CFrame = CFrame.new(root.Position, Vector3.new(targetPos.X, root.Position.Y, targetPos.Z))
 end
 
 --// UI LOGIC
@@ -111,15 +142,22 @@ InfoBtn.MouseButton1Click:Connect(function() InfoPanel.Visible = true end)
 closeInfo.MouseButton1Click:Connect(function() InfoPanel.Visible = false end)
 
 DiscordBtn.MouseButton1Click:Connect(function() 
-    setclipboard("https://discord.gg/ptwSWY9Pr3") 
-    DiscordBtn.Text = "COPIED!"
-    task.wait(2)
-    DiscordBtn.Text = "JOIN DISCORD"
+    if setclipboard then
+        setclipboard("https://discord.gg/ptwSWY9Pr3") 
+        DiscordBtn.Text = "COPIED!"
+        task.wait(2)
+        DiscordBtn.Text = "JOIN DISCORD"
+    else
+        DiscordBtn.Text = "SEE CONSOLE"
+        print("https://discord.gg/ptwSWY9Pr3")
+    end
 end)
 
-DROP_FOLDER.ChildAdded:Connect(function(child)
-    if (child.Name == DROP_NAME or child:FindFirstChild("Bottom")) and not blacklist[child] then targetObj = child end
-end)
+if DROP_FOLDER then
+    DROP_FOLDER.ChildAdded:Connect(function(child)
+        if (child.Name == DROP_NAME or child:FindFirstChild("Bottom")) and not blacklist[child] then targetObj = child end
+    end)
+end
 
 --// MAIN LOOP
 RS.Heartbeat:Connect(function()
@@ -127,7 +165,10 @@ RS.Heartbeat:Connect(function()
     local root = getRoot()
     if not root then return end
     
-    StamEvent:FireServer(0.505, "dash")
+    -- [FIX 5] Throttle Events: Firing every frame causes kicks. Now it fires randomly.
+    if StamEvent and math.random() > 0.85 then
+        StamEvent:FireServer(0.505, "dash")
+    end
 
     if targetObj and targetObj.Parent == DROP_FOLDER and not blacklist[targetObj] then
         local p = targetObj:FindFirstChildWhichIsA("BasePart", true)
@@ -161,3 +202,5 @@ RS.Heartbeat:Connect(function()
         end
     end
 end)
+
+print("RBD: Script Loaded Successfully")
