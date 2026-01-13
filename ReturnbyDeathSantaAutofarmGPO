@@ -1,11 +1,11 @@
---// Return by Death / Santa Autofarm Free Version [Universal Patch]
+--// Return by Death / Santa Autofarm [ZERO-INPUT BYPASS INTEGRATED]
 local Players = game:GetService("Players")
 local RS = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local CoreGui = game:GetService("CoreGui")
+local ProximityPromptService = game:GetService("ProximityPromptService")
 
---// EXECUTOR COMPATIBILITY FUNCTION
--- This ensures the menu shows up on ALL executors (Solara, Potassium, Mobile, etc.)
+--// EXECUTOR COMPATIBILITY
 local function getSafeUI()
     if gethui then return gethui() end
     if CoreGui then return CoreGui end
@@ -15,9 +15,8 @@ end
 --// CONFIG
 local TARGET_NAME = "Santa's Sleigh"
 local DROP_NAME = "ChristmasGift"
-local DROP_FOLDER = workspace:WaitForChild("Effects", 10) -- Added timeout so it doesn't freeze forever
-if not DROP_FOLDER then 
-    warn("RBD: 'Effects' folder not found. Script may need a game update.") 
+local DROP_FOLDER = workspace:WaitForChild("Effects", 10)
+if not DROP_FOLDER then
     DROP_FOLDER = workspace:WaitForChild("Effects")
 end
 
@@ -28,12 +27,10 @@ local StamEvent = ReplicatedStorage:WaitForChild("Events"):WaitForChild("takesta
 getgenv().Running = false
 local LocalPlayer = Players.LocalPlayer
 local targetObj = nil
-local giftTimer = 0
 local blacklist = {}
-local visitCount = {}
 
 --// UI CREATION
-local ScreenGui = Instance.new("ScreenGui", getSafeUI()) -- Uses safe parent now
+local ScreenGui = Instance.new("ScreenGui", getSafeUI())
 ScreenGui.Name = "RBD_Santa_UI"
 local Main = Instance.new("Frame", ScreenGui)
 local ToggleBtn = Instance.new("TextButton", Main)
@@ -41,7 +38,6 @@ local InfoBtn = Instance.new("TextButton", Main)
 local DiscordBtn = Instance.new("TextButton", Main)
 local StatusDot = Instance.new("Frame", Main)
 
--- REDESIGNED INFO PANEL WITH VISIBILITY FIX
 local InfoPanel = Instance.new("Frame", Main)
 local InfoTitle = Instance.new("TextLabel", InfoPanel)
 local itxt = Instance.new("TextLabel", InfoPanel)
@@ -51,15 +47,17 @@ Main.Name = "ReturnByDeath"; Main.Size = UDim2.new(0, 220, 0, 155); Main.Positio
 Main.BackgroundColor3 = Color3.fromRGB(15, 10, 25); Main.BorderSizePixel = 0; Main.Active = true; Main.Draggable = true
 Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 10)
 
+-- TITLE
 local Header = Instance.new("TextLabel", Main)
 Header.Size = UDim2.new(1, 0, 0, 20); Header.Position = UDim2.new(0,0,0,8)
 Header.Text = "RETURN BY DEATH"; Header.TextColor3 = Color3.fromRGB(180, 100, 255)
 Header.BackgroundTransparency = 1; Header.Font = Enum.Font.GothamBold; Header.TextSize = 14; Header.Parent = Main
 
+-- SUB-LABEL (FREE SANTA AUTOFARM)
 local SubHeader = Instance.new("TextLabel", Main)
-SubHeader.Size = UDim2.new(1, 0, 0, 15); SubHeader.Position = UDim2.new(0,0,0,22)
-SubHeader.Text = "(free santa autofarm)"; SubHeader.TextColor3 = Color3.fromRGB(130, 80, 200)
-SubHeader.BackgroundTransparency = 1; SubHeader.Font = Enum.Font.Gotham; SubHeader.TextSize = 10; SubHeader.Parent = Main
+SubHeader.Size = UDim2.new(1, 0, 0, 15); SubHeader.Position = UDim2.new(0, 0, 0, 24)
+SubHeader.Text = "FREE SANTA AUTOFARM"; SubHeader.TextColor3 = Color3.fromRGB(255, 255, 255)
+SubHeader.BackgroundTransparency = 1; SubHeader.Font = Enum.Font.GothamSemibold; SubHeader.TextSize = 10; SubHeader.Parent = Main
 
 local function StyleBtn(btn, pos, text)
     btn.Size = UDim2.new(0.9, 0, 0, 26); btn.Position = pos; btn.Text = text
@@ -67,38 +65,22 @@ local function StyleBtn(btn, pos, text)
     btn.Font = Enum.Font.GothamSemibold; btn.TextSize = 10; btn.Parent = Main; Instance.new("UICorner", btn)
 end
 
-StyleBtn(ToggleBtn, UDim2.new(0.05, 0, 0.35, 0), "ENABLE PILOT")
-StyleBtn(InfoBtn, UDim2.new(0.05, 0, 0.55, 0), "INFORMATION")
-StyleBtn(DiscordBtn, UDim2.new(0.05, 0, 0.75, 0), "JOIN DISCORD")
+StyleBtn(ToggleBtn, UDim2.new(0.05, 0, 0.38, 0), "ENABLE PILOT")
+StyleBtn(InfoBtn, UDim2.new(0.05, 0, 0.58, 0), "INFORMATION")
+StyleBtn(DiscordBtn, UDim2.new(0.05, 0, 0.78, 0), "JOIN DISCORD")
 
 StatusDot.Size = UDim2.new(0, 6, 0, 6); StatusDot.Position = UDim2.new(0.9, 0, 0.08, 0)
 StatusDot.BackgroundColor3 = Color3.fromRGB(255, 50, 50); StatusDot.Parent = Main; Instance.new("UICorner", StatusDot)
 
--- INFO PANEL VISIBILITY OVERHAUL
-InfoPanel.Size = UDim2.new(1, 0, 1, 0)
-InfoPanel.BackgroundColor3 = Color3.fromRGB(20, 15, 30) -- Slightly lighter so you can see it
-InfoPanel.BorderSizePixel = 0
-InfoPanel.Visible = false
-InfoPanel.ZIndex = 10 -- High ZIndex to stay on top
-InfoPanel.Parent = Main
-Instance.new("UICorner", InfoPanel)
+InfoPanel.Size = UDim2.new(1, 0, 1, 0); InfoPanel.BackgroundColor3 = Color3.fromRGB(20, 15, 30); InfoPanel.Visible = false; InfoPanel.ZIndex = 10; InfoPanel.Parent = Main; Instance.new("UICorner", InfoPanel)
+InfoTitle.Size = UDim2.new(1, 0, 0, 30); InfoTitle.Position = UDim2.new(0,0,0,5); InfoTitle.Text = "USER GUIDE"; InfoTitle.TextColor3 = Color3.fromRGB(180, 100, 255); InfoTitle.Font = Enum.Font.GothamBold; InfoTitle.TextSize = 12; InfoTitle.BackgroundTransparency = 1; InfoTitle.ZIndex = 11; InfoTitle.Parent = InfoPanel
 
-InfoTitle.Size = UDim2.new(1, 0, 0, 30); InfoTitle.Position = UDim2.new(0,0,0,5)
-InfoTitle.Text = "USER GUIDE"; InfoTitle.TextColor3 = Color3.fromRGB(180, 100, 255)
-InfoTitle.Font = Enum.Font.GothamBold; InfoTitle.TextSize = 12; InfoTitle.BackgroundTransparency = 1
-InfoTitle.ZIndex = 11; InfoTitle.Parent = InfoPanel
-
+-- UPDATED INFORMATION TEXT WITH TRIPLE SPACING
 itxt.Size = UDim2.new(0.85, 0, 0.6, 0); itxt.Position = UDim2.new(0.075, 0, 0.22, 0)
-itxt.Text = "You must use your own external autoclicker as the free version does not have one.\n\nKeep your mouse over the gift prompt or use a macro to collect.\n\nJoin the discord for the PREMIUM version and blackmarket script hub!"; 
-itxt.TextColor3 = Color3.fromRGB(220, 220, 220); itxt.TextWrapped = true; itxt.BackgroundTransparency = 1
-itxt.Font = Enum.Font.Gotham; itxt.TextSize = 9; itxt.TextYAlignment = Enum.TextYAlignment.Top
-itxt.ZIndex = 11; itxt.Parent = InfoPanel
+itxt.Text = "For the free version, you need your own autoclicker to automatically M1.\n\n\nThe paid version has more features as well as quality of life features.\n\nUSE IN PRIVATE SERVERS ONLY."; 
+itxt.TextColor3 = Color3.fromRGB(220, 220, 220); itxt.TextWrapped = true; itxt.BackgroundTransparency = 1; itxt.Font = Enum.Font.Gotham; itxt.TextSize = 9; itxt.TextYAlignment = Enum.TextYAlignment.Top; itxt.ZIndex = 11; itxt.Parent = InfoPanel
 
-closeInfo.Size = UDim2.new(0.8, 0, 0, 22); closeInfo.Position = UDim2.new(0.1, 0, 0.82, 0)
-closeInfo.Text = "CLOSE"; closeInfo.BackgroundColor3 = Color3.fromRGB(50, 30, 60)
-closeInfo.TextColor3 = Color3.fromRGB(255, 100, 100); closeInfo.Font = Enum.Font.GothamBold
-closeInfo.TextSize = 10; closeInfo.ZIndex = 11; closeInfo.Parent = InfoPanel
-Instance.new("UICorner", closeInfo)
+closeInfo.Size = UDim2.new(0.8, 0, 0, 22); closeInfo.Position = UDim2.new(0.1, 0, 0.82, 0); closeInfo.Text = "CLOSE"; closeInfo.BackgroundColor3 = Color3.fromRGB(50, 30, 60); closeInfo.TextColor3 = Color3.fromRGB(255, 100, 100); closeInfo.Font = Enum.Font.GothamBold; closeInfo.TextSize = 10; closeInfo.ZIndex = 11; closeInfo.Parent = InfoPanel; Instance.new("UICorner", closeInfo)
 
 --// CORE FUNCTIONS
 local function getRoot() return LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") end
@@ -113,6 +95,36 @@ local function applyMovement(targetPos)
     root.CFrame = root.CFrame:Lerp(CFrame.new(root.Position, Vector3.new(targetPos.X, root.Position.Y, targetPos.Z)), 0.1)
 end
 
+--// [BYPASS THREAD] - CONSTANT SCAN FOR PROMPT
+task.spawn(function()
+    while task.wait(0.1) do
+        if getgenv().Running then
+            local root = getRoot()
+            if root then
+                for _, v in pairs(workspace:GetDescendants()) do
+                    if v:IsA("ProximityPrompt") then
+                        local pPart = v.Parent:IsA("BasePart") and v.Parent or v.Parent:FindFirstChildWhichIsA("BasePart", true)
+                        if pPart then
+                            local dist = (pPart.Position - root.Position).Magnitude
+                            if dist < 15 then
+                                v:InputHoldBegin()
+                                task.wait(v.HoldDuration + 0.1)
+                                v:InputHoldEnd()
+                                
+                                if targetObj and v:IsDescendantOf(targetObj) then
+                                    blacklist[targetObj] = true
+                                    targetObj = nil
+                                end
+                                task.wait(1)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+end)
+
 --// UI LOGIC
 ToggleBtn.MouseButton1Click:Connect(function()
     getgenv().Running = not getgenv().Running
@@ -124,23 +136,11 @@ end)
 InfoBtn.MouseButton1Click:Connect(function() InfoPanel.Visible = true end)
 closeInfo.MouseButton1Click:Connect(function() InfoPanel.Visible = false end)
 
-DiscordBtn.MouseButton1Click:Connect(function() 
-    if setclipboard then
-        setclipboard("https://discord.gg/ptwSWY9Pr3") 
-        DiscordBtn.Text = "COPIED!"
-        task.wait(2)
-        DiscordBtn.Text = "JOIN DISCORD"
-    else
-        DiscordBtn.Text = "ERROR"
-        print("Clipboard not supported on this executor.")
-    end
-end)
-
 DROP_FOLDER.ChildAdded:Connect(function(child)
     if (child.Name == DROP_NAME or child:FindFirstChild("Bottom")) and not blacklist[child] then targetObj = child end
 end)
 
---// MAIN LOOP
+--// MAIN MOVEMENT LOOP
 RS.Heartbeat:Connect(function()
     if not getgenv().Running then return end
     local root = getRoot()
@@ -151,18 +151,13 @@ RS.Heartbeat:Connect(function()
     if targetObj and targetObj.Parent == DROP_FOLDER and not blacklist[targetObj] then
         local p = targetObj:FindFirstChildWhichIsA("BasePart", true)
         if p then
-            if (root.Position - p.Position).Magnitude > 4 then
+            local dist = (root.Position - p.Position).Magnitude
+            if dist > 3 then
                 applyMovement(p.Position)
-                giftTimer = tick()
             else
                 if root:FindFirstChild("DolphinMove") then root.DolphinMove:Destroy() end
                 root.Velocity = Vector3.zero
                 root.CFrame = p.CFrame * CFrame.new(0, 1, 0)
-                if tick() - giftTimer >= (3.2 + math.random() * 0.3) then
-                    visitCount[targetObj] = (visitCount[targetObj] or 0) + 1
-                    if visitCount[targetObj] >= 2 then blacklist[targetObj] = true end
-                    targetObj = nil 
-                end
             end
             return
         end
