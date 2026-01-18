@@ -1,177 +1,237 @@
---// Return by Death / Santa Autofarm [ZERO-INPUT BYPASS INTEGRATED]
+--// Return by Death Hub | GPO Edition
+--// V2.7.4: Sidebar UI + Descend Fly + Remove Fog
+
 local Players = game:GetService("Players")
 local RS = game:GetService("RunService")
+local UIS = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TeleportService = game:GetService("TeleportService")
 local CoreGui = game:GetService("CoreGui")
-local ProximityPromptService = game:GetService("ProximityPromptService")
+local Lighting = game:GetService("Lighting")
 
---// EXECUTOR COMPATIBILITY
-local function getSafeUI()
-    if gethui then return gethui() end
-    if CoreGui then return CoreGui end
-    return Players.LocalPlayer:WaitForChild("PlayerGui")
-end
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+local StamEvent = ReplicatedStorage:WaitForChild("Events"):WaitForChild("takestam")
 
 --// CONFIG
 local TARGET_NAME = "Santa's Sleigh"
 local DROP_NAME = "ChristmasGift"
-local DROP_FOLDER = workspace:WaitForChild("Effects", 10)
-if not DROP_FOLDER then
-    DROP_FOLDER = workspace:WaitForChild("Effects")
-end
+local DROP_FOLDER = workspace:WaitForChild("Effects", 10) or workspace:WaitForChild("Effects")
 
-local SPEED = 75
-local StamEvent = ReplicatedStorage:WaitForChild("Events"):WaitForChild("takestam")
+getgenv().Config = {
+    SpeedEnabled = false,
+    WalkSpeedPower = 75,
+    FlySpeedPower = 75,
+    ManualFly = false,
+    Noclip = false,
+    SantaPilot = false,
+    AutoClicker = false,
+    AutoRejoin = false,
+    RemoveFog = false
+}
 
---// STATE
-getgenv().Running = false
-local LocalPlayer = Players.LocalPlayer
 local targetObj = nil
 local blacklist = {}
+local ToggleObjects = {} 
 
---// UI CREATION
+--// THEME COLORS
+local Colors = {
+    Background = Color3.fromRGB(15, 10, 25),
+    Sidebar = Color3.fromRGB(10, 5, 15),
+    Accent = Color3.fromRGB(180, 100, 255),
+    Inactive = Color3.fromRGB(40, 40, 40),
+    Text = Color3.fromRGB(255, 255, 255),
+    SecondaryText = Color3.fromRGB(150, 150, 150),
+    TitleBar = Color3.fromRGB(25, 20, 40),
+    Divider = Color3.fromRGB(45, 40, 60)
+}
+
+--// UI SETUP
+local function getSafeUI() return gethui and gethui() or CoreGui end
 local ScreenGui = Instance.new("ScreenGui", getSafeUI())
-ScreenGui.Name = "RBD_Santa_UI"
-local Main = Instance.new("Frame", ScreenGui)
-local ToggleBtn = Instance.new("TextButton", Main)
-local InfoBtn = Instance.new("TextButton", Main)
-local DiscordBtn = Instance.new("TextButton", Main)
-local StatusDot = Instance.new("Frame", Main)
+ScreenGui.Name = "RBD_Hub_V27_4"
 
-local InfoPanel = Instance.new("Frame", Main)
-local InfoTitle = Instance.new("TextLabel", InfoPanel)
-local itxt = Instance.new("TextLabel", InfoPanel)
-local closeInfo = Instance.new("TextButton", InfoPanel)
+local MainFrame = Instance.new("Frame", ScreenGui)
+MainFrame.Size = UDim2.new(0, 500, 0, 320); MainFrame.Position = UDim2.new(0.5, -250, 0.5, -160)
+MainFrame.BackgroundColor3 = Colors.Background; MainFrame.BorderSizePixel = 0
+Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 8)
 
-Main.Name = "ReturnByDeath"; Main.Size = UDim2.new(0, 220, 0, 155); Main.Position = UDim2.new(0.5, -110, 0.1, 0)
-Main.BackgroundColor3 = Color3.fromRGB(15, 10, 25); Main.BorderSizePixel = 0; Main.Active = true; Main.Draggable = true
-Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 10)
+local DragBar = Instance.new("Frame", MainFrame)
+DragBar.Size = UDim2.new(1, 0, 0, 35); DragBar.BackgroundColor3 = Colors.TitleBar; DragBar.BorderSizePixel = 0
+Instance.new("UICorner", DragBar).CornerRadius = UDim.new(0, 8)
 
--- TITLE
-local Header = Instance.new("TextLabel", Main)
-Header.Size = UDim2.new(1, 0, 0, 20); Header.Position = UDim2.new(0,0,0,8)
-Header.Text = "RETURN BY DEATH"; Header.TextColor3 = Color3.fromRGB(180, 100, 255)
-Header.BackgroundTransparency = 1; Header.Font = Enum.Font.GothamBold; Header.TextSize = 14; Header.Parent = Main
+local Title = Instance.new("TextLabel", DragBar)
+Title.Text = "    RETURN BY DEATH HUB V2.7.4"; Title.Size = UDim2.new(1, 0, 1, 0); Title.TextColor3 = Colors.Accent
+Title.Font = Enum.Font.GothamBold; Title.TextSize = 13; Title.TextXAlignment = "Left"; Title.BackgroundTransparency = 1
 
--- SUB-LABEL (FREE SANTA AUTOFARM)
-local SubHeader = Instance.new("TextLabel", Main)
-SubHeader.Size = UDim2.new(1, 0, 0, 15); SubHeader.Position = UDim2.new(0, 0, 0, 24)
-SubHeader.Text = "FREE SANTA AUTOFARM"; SubHeader.TextColor3 = Color3.fromRGB(255, 255, 255)
-SubHeader.BackgroundTransparency = 1; SubHeader.Font = Enum.Font.GothamSemibold; SubHeader.TextSize = 10; SubHeader.Parent = Main
+local Sidebar = Instance.new("Frame", MainFrame)
+Sidebar.Position = UDim2.new(0, 0, 0, 35); Sidebar.Size = UDim2.new(0, 120, 1, -35); Sidebar.BackgroundColor3 = Colors.Sidebar; Sidebar.BorderSizePixel = 0
+Instance.new("UIListLayout", Sidebar).Padding = UDim.new(0, 5)
 
-local function StyleBtn(btn, pos, text)
-    btn.Size = UDim2.new(0.9, 0, 0, 26); btn.Position = pos; btn.Text = text
-    btn.BackgroundColor3 = Color3.fromRGB(30, 20, 45); btn.TextColor3 = Color3.new(1, 1, 1)
-    btn.Font = Enum.Font.GothamSemibold; btn.TextSize = 10; btn.Parent = Main; Instance.new("UICorner", btn)
+local PageContainer = Instance.new("Frame", MainFrame)
+PageContainer.Position = UDim2.new(0, 130, 0, 45); PageContainer.Size = UDim2.new(1, -140, 1, -55); PageContainer.BackgroundTransparency = 1
+
+local Pages = {}
+local function CreatePage(name)
+    local Page = Instance.new("ScrollingFrame", PageContainer)
+    Page.Size = UDim2.new(1, 0, 1, 0); Page.BackgroundTransparency = 1; Page.Visible = false
+    Page.ScrollBarThickness = 2; Page.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    Instance.new("UIListLayout", Page).Padding = UDim.new(0, 8)
+    
+    local TabBtn = Instance.new("TextButton", Sidebar)
+    TabBtn.Size = UDim2.new(1, 0, 0, 30); TabBtn.BackgroundTransparency = 1; TabBtn.Text = name; TabBtn.TextColor3 = Colors.SecondaryText; TabBtn.Font = Enum.Font.GothamSemibold; TabBtn.TextSize = 12
+    TabBtn.MouseButton1Click:Connect(function()
+        for _, p in pairs(Pages) do p.Visible = false end
+        Page.Visible = true
+        for _, b in pairs(Sidebar:GetChildren()) do if b:IsA("TextButton") then b.TextColor3 = Colors.SecondaryText end end
+        TabBtn.TextColor3 = Colors.Accent
+    end)
+    Pages[name] = Page
+    return Page
 end
 
-StyleBtn(ToggleBtn, UDim2.new(0.05, 0, 0.38, 0), "ENABLE PILOT")
-StyleBtn(InfoBtn, UDim2.new(0.05, 0, 0.58, 0), "INFORMATION")
-StyleBtn(DiscordBtn, UDim2.new(0.05, 0, 0.78, 0), "JOIN DISCORD")
+local function CreateDivider(parent)
+    local Line = Instance.new("Frame", parent); Line.Size = UDim2.new(1, -15, 0, 1); Line.BackgroundColor3 = Colors.Divider; Line.BorderSizePixel = 0
+end
 
-StatusDot.Size = UDim2.new(0, 6, 0, 6); StatusDot.Position = UDim2.new(0.9, 0, 0.08, 0)
-StatusDot.BackgroundColor3 = Color3.fromRGB(255, 50, 50); StatusDot.Parent = Main; Instance.new("UICorner", StatusDot)
+local function CreateToggle(parent, configName, text, desc, callback)
+    local Frame = Instance.new("Frame", parent); Frame.Size = UDim2.new(1, -10, 0, 35); Frame.BackgroundTransparency = 1
+    local Label = Instance.new("TextLabel", Frame); Label.Text = text; Label.Size = UDim2.new(0.7, 0, 0, 18); Label.TextColor3 = Colors.Text; Label.Font = Enum.Font.GothamSemibold; Label.TextSize = 12; Label.TextXAlignment = "Left"; Label.BackgroundTransparency = 1
+    local Sub = Instance.new("TextLabel", Frame); Sub.Text = desc; Sub.Position = UDim2.new(0,0,0,16); Sub.Size = UDim2.new(0.7,0,0,12); Sub.TextColor3 = Colors.SecondaryText; Sub.Font = Enum.Font.Gotham; Sub.TextSize = 9; Sub.TextXAlignment = "Left"; Sub.BackgroundTransparency = 1
+    local Btn = Instance.new("TextButton", Frame); Btn.Position = UDim2.new(0.88, 0, 0.15, 0); Btn.Size = UDim2.new(0, 18, 0, 18); Btn.BackgroundColor3 = Colors.Inactive; Btn.Text = ""; Instance.new("UICorner", Btn)
+    local function updateUI() Btn.BackgroundColor3 = getgenv().Config[configName] and Colors.Accent or Colors.Inactive end
+    Btn.MouseButton1Click:Connect(function() getgenv().Config[configName] = not getgenv().Config[configName]; updateUI(); if callback then callback(getgenv().Config[configName]) end end)
+    ToggleObjects[configName] = updateUI
+    updateUI()
+    return Frame
+end
 
-InfoPanel.Size = UDim2.new(1, 0, 1, 0); InfoPanel.BackgroundColor3 = Color3.fromRGB(20, 15, 30); InfoPanel.Visible = false; InfoPanel.ZIndex = 10; InfoPanel.Parent = Main; Instance.new("UICorner", InfoPanel)
-InfoTitle.Size = UDim2.new(1, 0, 0, 30); InfoTitle.Position = UDim2.new(0,0,0,5); InfoTitle.Text = "USER GUIDE"; InfoTitle.TextColor3 = Color3.fromRGB(180, 100, 255); InfoTitle.Font = Enum.Font.GothamBold; InfoTitle.TextSize = 12; InfoTitle.BackgroundTransparency = 1; InfoTitle.ZIndex = 11; InfoTitle.Parent = InfoPanel
+local function CreateSlider(parent, text, min, max, default, callback)
+    local Frame = Instance.new("Frame", parent); Frame.Size = UDim2.new(1, -10, 0, 40); Frame.BackgroundTransparency = 1
+    local Label = Instance.new("TextLabel", Frame); Label.Text = text; Label.Size = UDim2.new(1, 0, 0, 12); Label.TextColor3 = Colors.SecondaryText; Label.Font = Enum.Font.GothamSemibold; Label.TextSize = 10; Label.TextXAlignment = "Left"; Label.BackgroundTransparency = 1
+    local SliderBar = Instance.new("Frame", Frame); SliderBar.Position = UDim2.new(0, 0, 0, 18); SliderBar.Size = UDim2.new(0.82, 0, 0, 4); SliderBar.BackgroundColor3 = Colors.Inactive
+    local Fill = Instance.new("Frame", SliderBar); Fill.Size = UDim2.new((default-min)/(max-min), 0, 1, 0); Fill.BackgroundColor3 = Colors.Accent
+    local ValLabel = Instance.new("TextLabel", Frame); ValLabel.Position = UDim2.new(0.88, 0, 0.35, 0); ValLabel.Text = tostring(default); ValLabel.TextColor3 = Colors.Text; ValLabel.BackgroundTransparency = 1; ValLabel.Font = Enum.Font.Code; ValLabel.TextSize = 10
+    local dragging = false
+    SliderBar.InputBegan:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = true end end)
+    UIS.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end end)
+    UIS.InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local pos = math.clamp((input.Position.X - SliderBar.AbsolutePosition.X) / SliderBar.AbsoluteSize.X, 0, 1)
+            Fill.Size = UDim2.new(pos, 0, 1, 0); local val = math.floor(min + (max - min) * pos); ValLabel.Text = tostring(val); callback(val)
+        end
+    end)
+end
 
--- UPDATED INFORMATION TEXT WITH TRIPLE SPACING
-itxt.Size = UDim2.new(0.85, 0, 0.6, 0); itxt.Position = UDim2.new(0.075, 0, 0.22, 0)
-itxt.Text = "For the free version, you need your own autoclicker to automatically M1.\n\n\nThe paid version has more features as well as quality of life features.\n\nUSE IN PRIVATE SERVERS ONLY."; 
-itxt.TextColor3 = Color3.fromRGB(220, 220, 220); itxt.TextWrapped = true; itxt.BackgroundTransparency = 1; itxt.Font = Enum.Font.Gotham; itxt.TextSize = 9; itxt.TextYAlignment = Enum.TextYAlignment.Top; itxt.ZIndex = 11; itxt.Parent = InfoPanel
-
-closeInfo.Size = UDim2.new(0.8, 0, 0, 22); closeInfo.Position = UDim2.new(0.1, 0, 0.82, 0); closeInfo.Text = "CLOSE"; closeInfo.BackgroundColor3 = Color3.fromRGB(50, 30, 60); closeInfo.TextColor3 = Color3.fromRGB(255, 100, 100); closeInfo.Font = Enum.Font.GothamBold; closeInfo.TextSize = 10; closeInfo.ZIndex = 11; closeInfo.Parent = InfoPanel; Instance.new("UICorner", closeInfo)
-
---// CORE FUNCTIONS
+--// CORE LOGIC
 local function getRoot() return LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") end
+
+local function checkForWall(root, direction)
+    local params = RaycastParams.new(); params.FilterType = Enum.RaycastFilterType.Exclude
+    local ignoreList = {LocalPlayer.Character, DROP_FOLDER}
+    local santa = workspace:FindFirstChild(TARGET_NAME, true) or workspace:FindFirstChild("Sleigh", true)
+    if santa then table.insert(ignoreList, santa) end
+    params.FilterDescendantsInstances = ignoreList
+    local ray = workspace:Raycast(root.Position, direction * 5, params)
+    return ray ~= nil
+end
 
 local function applyMovement(targetPos)
     local root = getRoot()
     if not root then return end
-    for _, v in pairs(LocalPlayer.Character:GetDescendants()) do if v:IsA("BasePart") then v.CanCollide = false end end
     local bv = root:FindFirstChild("DolphinMove") or Instance.new("BodyVelocity")
     bv.Name = "DolphinMove"; bv.MaxForce = Vector3.new(1e6, 1e6, 1e6); bv.Parent = root
-    bv.Velocity = (targetPos - root.Position).Unit * SPEED
+    local dirVector = (targetPos - root.Position).Unit
+    if checkForWall(root, dirVector) then
+        bv.Velocity = (dirVector + Vector3.new(0, 0.8, 0)).Unit * getgenv().Config.FlySpeedPower
+    else
+        bv.Velocity = dirVector * getgenv().Config.FlySpeedPower
+    end
     root.CFrame = root.CFrame:Lerp(CFrame.new(root.Position, Vector3.new(targetPos.X, root.Position.Y, targetPos.Z)), 0.1)
 end
 
---// [BYPASS THREAD] - CONSTANT SCAN FOR PROMPT
+--// TABS
+local MainTab = CreatePage("Main")
+local FarmTab = CreatePage("Farm")
+local MiscTab = CreatePage("Misc")
+Pages["Main"].Visible = true
+
+-- MAIN
+CreateToggle(MainTab, "ManualFly", "Manual Fly", "Space = Up | Ctrl = Down", function(v) if not v and getRoot() and getRoot():FindFirstChild("DolphinMove") then getRoot().DolphinMove:Destroy() end end)
+CreateSlider(MainTab, "FLY SPEED", 16, 130, 75, function(v) getgenv().Config.FlySpeedPower = v end)
+CreateDivider(MainTab)
+CreateToggle(MainTab, "SpeedEnabled", "Walk Speed Boost", "Ground Movement Only", nil)
+CreateSlider(MainTab, "WALK SPEED", 16, 130, 75, function(v) getgenv().Config.WalkSpeedPower = v end)
+CreateDivider(MainTab)
+CreateToggle(MainTab, "Noclip", "Noclip", "Collision Auto-Reset", function(v) if not v and LocalPlayer.Character then for _, p in pairs(LocalPlayer.Character:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide = true end end end end)
+
+-- FARM
+CreateToggle(FarmTab, "SantaPilot", "Santa Pilot", "Auto Wall-Scaler Farm", function(v) if not v and getRoot() and getRoot():FindFirstChild("DolphinMove") then getRoot().DolphinMove:Destroy() end end)
+CreateDivider(FarmTab)
+CreateToggle(FarmTab, "AutoClicker", "M1 Macro", "V to Toggle", function()
+    if getgenv().Config.AutoClicker then task.spawn(function() while getgenv().Config.AutoClicker do mouse1click(); task.wait(0.07) end end) end
+end)
+
+-- MISC
+CreateToggle(MiscTab, "AutoRejoin", "Auto Rejoin", "Re-enters game if kicked", nil)
+CreateDivider(MiscTab)
+CreateToggle(MiscTab, "RemoveFog", "Remove Fog", "Clears atmosphere", function(v)
+    if v then task.spawn(function() while getgenv().Config.RemoveFog do Lighting.FogEnd = 9e9; task.wait(1) end end) end
+end)
+
+--// LOOPS
 task.spawn(function()
-    while task.wait(0.1) do
-        if getgenv().Running then
-            local root = getRoot()
-            if root then
-                for _, v in pairs(workspace:GetDescendants()) do
-                    if v:IsA("ProximityPrompt") then
-                        local pPart = v.Parent:IsA("BasePart") and v.Parent or v.Parent:FindFirstChildWhichIsA("BasePart", true)
-                        if pPart then
-                            local dist = (pPart.Position - root.Position).Magnitude
-                            if dist < 15 then
-                                v:InputHoldBegin()
-                                task.wait(v.HoldDuration + 0.1)
-                                v:InputHoldEnd()
-                                
-                                if targetObj and v:IsDescendantOf(targetObj) then
-                                    blacklist[targetObj] = true
-                                    targetObj = nil
-                                end
-                                task.wait(1)
-                            end
-                        end
-                    end
-                end
-            end
-        end
+    while task.wait(0.15) do 
+        if getgenv().Config.SantaPilot or getgenv().Config.ManualFly or getgenv().Config.Noclip or getgenv().Config.SpeedEnabled then 
+            StamEvent:FireServer(0.505, "dash") 
+        end 
     end
 end)
 
---// UI LOGIC
-ToggleBtn.MouseButton1Click:Connect(function()
-    getgenv().Running = not getgenv().Running
-    ToggleBtn.Text = getgenv().Running and "PILOT ACTIVE" or "ENABLE PILOT"
-    StatusDot.BackgroundColor3 = getgenv().Running and Color3.fromRGB(180, 100, 255) or Color3.fromRGB(255, 50, 50)
-    if not getgenv().Running and getRoot() and getRoot():FindFirstChild("DolphinMove") then getRoot().DolphinMove:Destroy() end
-end)
-
-InfoBtn.MouseButton1Click:Connect(function() InfoPanel.Visible = true end)
-closeInfo.MouseButton1Click:Connect(function() InfoPanel.Visible = false end)
-
-DROP_FOLDER.ChildAdded:Connect(function(child)
-    if (child.Name == DROP_NAME or child:FindFirstChild("Bottom")) and not blacklist[child] then targetObj = child end
-end)
-
---// MAIN MOVEMENT LOOP
 RS.Heartbeat:Connect(function()
-    if not getgenv().Running then return end
     local root = getRoot()
     if not root then return end
-    
-    StamEvent:FireServer(0.505, "dash")
+    if getgenv().Config.Noclip then for _, v in pairs(LocalPlayer.Character:GetDescendants()) do if v:IsA("BasePart") then v.CanCollide = false end end end
 
-    if targetObj and targetObj.Parent == DROP_FOLDER and not blacklist[targetObj] then
-        local p = targetObj:FindFirstChildWhichIsA("BasePart", true)
-        if p then
-            local dist = (root.Position - p.Position).Magnitude
-            if dist > 3 then
-                applyMovement(p.Position)
-            else
-                if root:FindFirstChild("DolphinMove") then root.DolphinMove:Destroy() end
-                root.Velocity = Vector3.zero
-                root.CFrame = p.CFrame * CFrame.new(0, 1, 0)
+    if getgenv().Config.SantaPilot then
+        if targetObj and targetObj.Parent == DROP_FOLDER and not blacklist[targetObj] then
+            local p = targetObj:FindFirstChildWhichIsA("BasePart", true)
+            if p then 
+                local targetPosition = p.Position + Vector3.new(0, 5, 0)
+                if (root.Position - targetPosition).Magnitude > 5 then applyMovement(targetPosition)
+                else if root:FindFirstChild("DolphinMove") then root.DolphinMove:Destroy() end root.Velocity = Vector3.zero end
+                return 
             end
-            return
+        end
+        local sleigh = workspace:FindFirstChild(TARGET_NAME, true) or workspace:FindFirstChild("Sleigh", true)
+        if sleigh then
+            local sPart = sleigh:IsA("BasePart") and sleigh or sleigh:FindFirstChildWhichIsA("BasePart", true)
+            local goal = (sPart.CFrame * CFrame.new(0, -10, 5)).Position
+            if (root.Position - goal).Magnitude > 5 then applyMovement(goal)
+            else if root:FindFirstChild("DolphinMove") then root.DolphinMove:Destroy() end root.Velocity = Vector3.zero end
+        end
+    elseif getgenv().Config.SpeedEnabled then
+        local hum = LocalPlayer.Character:FindFirstChild("Humanoid")
+        if hum and hum.MoveDirection.Magnitude > 0 then
+            root.Velocity = Vector3.new(hum.MoveDirection.X * getgenv().Config.WalkSpeedPower, root.Velocity.Y, hum.MoveDirection.Z * getgenv().Config.WalkSpeedPower)
         end
     end
 
-    local sleigh = workspace:FindFirstChild(TARGET_NAME, true) or workspace:FindFirstChild("Sleigh", true)
-    if sleigh then
-        local sPart = sleigh:IsA("BasePart") and sleigh or sleigh:FindFirstChildWhichIsA("BasePart", true)
-        local goal = (sPart.CFrame * CFrame.new(0, -10, 5)).Position
-        if (root.Position - goal).Magnitude > 3 then applyMovement(goal)
-        else
-            if root:FindFirstChild("DolphinMove") then root.DolphinMove:Destroy() end
-            root.Velocity = Vector3.zero
-            root.CFrame = root.CFrame:Lerp(CFrame.new(goal, sPart.Position), 0.1)
-        end
+    if getgenv().Config.ManualFly and not getgenv().Config.SantaPilot then
+        local bv = root:FindFirstChild("DolphinMove") or Instance.new("BodyVelocity"); bv.Name = "DolphinMove"; bv.MaxForce = Vector3.new(1e6, 1e6, 1e6); bv.Parent = root
+        local moveDir = Vector3.zero
+        if UIS:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + Camera.CFrame.LookVector end
+        if UIS:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - Camera.CFrame.LookVector end
+        if UIS:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - Camera.CFrame.RightVector end
+        if UIS:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + Camera.CFrame.RightVector end
+        if UIS:IsKeyDown(Enum.KeyCode.Space) then moveDir = moveDir + Vector3.new(0, 1, 0) end
+        if UIS:IsKeyDown(Enum.KeyCode.LeftControl) then moveDir = moveDir - Vector3.new(0, 1, 0) end
+        bv.Velocity = moveDir.Magnitude > 0 and moveDir.Unit * getgenv().Config.FlySpeedPower or Vector3.zero
     end
 end)
+
+-- DRAG
+local dragging, dragStart, startPos
+DragBar.InputBegan:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = true; dragStart = input.Position; startPos = MainFrame.Position end end)
+UIS.InputChanged:Connect(function(input) if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then local delta = input.Position - dragStart; MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y) end end)
+UIS.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end end)
