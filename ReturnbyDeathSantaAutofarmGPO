@@ -1,14 +1,16 @@
 --// Return by Death Hub | GPO Edition
---// V2.7.4: Sidebar UI + Descend Fly + Remove Fog
+--// V2.8.1: Integrated Auto-Collect + Restored Santa Logic
 
 local Players = game:GetService("Players")
 local RS = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local TeleportService = game:GetService("TeleportService")
 local CoreGui = game:GetService("CoreGui")
 local Lighting = game:GetService("Lighting")
+local Terrain = workspace:WaitForChild("Terrain")
 
+--// SERVICES
+local VIM = cloneref(Instance.new("VirtualInputManager"))
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 local StamEvent = ReplicatedStorage:WaitForChild("Events"):WaitForChild("takestam")
@@ -17,6 +19,16 @@ local StamEvent = ReplicatedStorage:WaitForChild("Events"):WaitForChild("takesta
 local TARGET_NAME = "Santa's Sleigh"
 local DROP_NAME = "ChristmasGift"
 local DROP_FOLDER = workspace:WaitForChild("Effects", 10) or workspace:WaitForChild("Effects")
+
+-- Santa Logic Variables
+local targetObj = nil
+local giftTimer = 0
+local blacklist = {}
+local visitCount = {}
+
+-- Constants
+local FOLLOW_DISTANCE = 6 
+local LOCK_FLY_POWER = 120 
 
 getgenv().Config = {
     SpeedEnabled = false,
@@ -27,11 +39,11 @@ getgenv().Config = {
     SantaPilot = false,
     AutoClicker = false,
     AutoRejoin = false,
-    RemoveFog = false
+    RemoveFog = false,
+    AutoLockOn = false,
+    AntiAFK = false
 }
 
-local targetObj = nil
-local blacklist = {}
 local ToggleObjects = {} 
 
 --// THEME COLORS
@@ -46,10 +58,54 @@ local Colors = {
     Divider = Color3.fromRGB(45, 40, 60)
 }
 
---// UI SETUP
+--// UTILITY FUNCTIONS
 local function getSafeUI() return gethui and gethui() or CoreGui end
+local function getRoot() return LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") end
+
+-- Robust Fog Clearer
+local function ClearFog()
+    Lighting.FogEnd = 9e9
+    Lighting.FogStart = 0
+    local atmosphere = Lighting:FindFirstChildWhichIsA("Atmosphere")
+    if atmosphere then atmosphere.Density = 0; atmosphere.Haze = 0 end
+    if Terrain:FindFirstChildWhichIsA("Clouds") then Terrain.Clouds.Density = 0; Terrain.Clouds.Cover = 0 end
+    for _, effect in pairs(Lighting:GetChildren()) do
+        if effect:IsA("DepthOfFieldEffect") then effect.Enabled = false
+        elseif effect:IsA("BlurEffect") then effect.Size = 0 end
+    end
+end
+
+-- Combat Lock-on Functions
+local function getNearest()
+    local closest, dist = nil, math.huge
+    local myRoot = getRoot()
+    if not myRoot then return nil end
+    local folder = workspace:FindFirstChild("PlayerCharacters") or workspace
+    for _, v in pairs(folder:GetChildren()) do
+        if v:IsA("Model") and v ~= LocalPlayer.Character then
+            local enemyRoot = v:FindFirstChild("HumanoidRootPart")
+            if enemyRoot then
+                local d = (myRoot.Position - enemyRoot.Position).Magnitude
+                if d < dist then dist = d; closest = v end
+            end
+        end
+    end
+    return closest
+end
+
+local function checkForWall(root, direction)
+    local params = RaycastParams.new(); params.FilterType = Enum.RaycastFilterType.Exclude
+    local ignoreList = {LocalPlayer.Character, DROP_FOLDER}
+    local santa = workspace:FindFirstChild(TARGET_NAME, true) or workspace:FindFirstChild("Sleigh", true)
+    if santa then table.insert(ignoreList, santa) end
+    params.FilterDescendantsInstances = ignoreList
+    local ray = workspace:Raycast(root.Position, direction * 5, params)
+    return ray ~= nil
+end
+
+--// UI SETUP
 local ScreenGui = Instance.new("ScreenGui", getSafeUI())
-ScreenGui.Name = "RBD_Hub_V27_4"
+ScreenGui.Name = "RBD_Hub_V28_1"
 
 local MainFrame = Instance.new("Frame", ScreenGui)
 MainFrame.Size = UDim2.new(0, 500, 0, 320); MainFrame.Position = UDim2.new(0.5, -250, 0.5, -160)
@@ -61,7 +117,7 @@ DragBar.Size = UDim2.new(1, 0, 0, 35); DragBar.BackgroundColor3 = Colors.TitleBa
 Instance.new("UICorner", DragBar).CornerRadius = UDim.new(0, 8)
 
 local Title = Instance.new("TextLabel", DragBar)
-Title.Text = "    RETURN BY DEATH HUB V2.7.4"; Title.Size = UDim2.new(1, 0, 1, 0); Title.TextColor3 = Colors.Accent
+Title.Text = "    RETURN BY DEATH HUB V2.8.1"; Title.Size = UDim2.new(1, 0, 1, 0); Title.TextColor3 = Colors.Accent
 Title.Font = Enum.Font.GothamBold; Title.TextSize = 13; Title.TextXAlignment = "Left"; Title.BackgroundTransparency = 1
 
 local Sidebar = Instance.new("Frame", MainFrame)
@@ -123,35 +179,9 @@ local function CreateSlider(parent, text, min, max, default, callback)
     end)
 end
 
---// CORE LOGIC
-local function getRoot() return LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") end
-
-local function checkForWall(root, direction)
-    local params = RaycastParams.new(); params.FilterType = Enum.RaycastFilterType.Exclude
-    local ignoreList = {LocalPlayer.Character, DROP_FOLDER}
-    local santa = workspace:FindFirstChild(TARGET_NAME, true) or workspace:FindFirstChild("Sleigh", true)
-    if santa then table.insert(ignoreList, santa) end
-    params.FilterDescendantsInstances = ignoreList
-    local ray = workspace:Raycast(root.Position, direction * 5, params)
-    return ray ~= nil
-end
-
-local function applyMovement(targetPos)
-    local root = getRoot()
-    if not root then return end
-    local bv = root:FindFirstChild("DolphinMove") or Instance.new("BodyVelocity")
-    bv.Name = "DolphinMove"; bv.MaxForce = Vector3.new(1e6, 1e6, 1e6); bv.Parent = root
-    local dirVector = (targetPos - root.Position).Unit
-    if checkForWall(root, dirVector) then
-        bv.Velocity = (dirVector + Vector3.new(0, 0.8, 0)).Unit * getgenv().Config.FlySpeedPower
-    else
-        bv.Velocity = dirVector * getgenv().Config.FlySpeedPower
-    end
-    root.CFrame = root.CFrame:Lerp(CFrame.new(root.Position, Vector3.new(targetPos.X, root.Position.Y, targetPos.Z)), 0.1)
-end
-
 --// TABS
 local MainTab = CreatePage("Main")
+local CombatTab = CreatePage("Combat")
 local FarmTab = CreatePage("Farm")
 local MiscTab = CreatePage("Misc")
 Pages["Main"].Visible = true
@@ -165,8 +195,16 @@ CreateSlider(MainTab, "WALK SPEED", 16, 130, 75, function(v) getgenv().Config.Wa
 CreateDivider(MainTab)
 CreateToggle(MainTab, "Noclip", "Noclip", "Collision Auto-Reset", function(v) if not v and LocalPlayer.Character then for _, p in pairs(LocalPlayer.Character:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide = true end end end end)
 
+-- COMBAT
+CreateToggle(CombatTab, "AutoLockOn", "Auto Lock-On", "Chase Nearest Player (G)", function(v)
+    if not v then 
+        local root = getRoot()
+        if root and root:FindFirstChild("DolphinMove") then root.DolphinMove:Destroy() end
+    end
+end)
+
 -- FARM
-CreateToggle(FarmTab, "SantaPilot", "Santa Pilot", "Auto Wall-Scaler Farm", function(v) if not v and getRoot() and getRoot():FindFirstChild("DolphinMove") then getRoot().DolphinMove:Destroy() end end)
+CreateToggle(FarmTab, "SantaPilot", "Santa Pilot", "Auto-Collects Christmas Gifts", function(v) if not v and getRoot() and getRoot():FindFirstChild("DolphinMove") then getRoot().DolphinMove:Destroy() end end)
 CreateDivider(FarmTab)
 CreateToggle(FarmTab, "AutoClicker", "M1 Macro", "V to Toggle", function()
     if getgenv().Config.AutoClicker then task.spawn(function() while getgenv().Config.AutoClicker do mouse1click(); task.wait(0.07) end end) end
@@ -174,15 +212,44 @@ end)
 
 -- MISC
 CreateToggle(MiscTab, "AutoRejoin", "Auto Rejoin", "Re-enters game if kicked", nil)
+CreateToggle(MiscTab, "AntiAFK", "Anti-AFK", "VirtualInputManager (Safe)", nil)
 CreateDivider(MiscTab)
-CreateToggle(MiscTab, "RemoveFog", "Remove Fog", "Clears atmosphere", function(v)
-    if v then task.spawn(function() while getgenv().Config.RemoveFog do Lighting.FogEnd = 9e9; task.wait(1) end end) end
+CreateToggle(MiscTab, "RemoveFog", "Remove Fog (FIXED)", "Clears Atmosphere/Clouds", function(v)
+    if v then 
+        ClearFog() 
+        task.spawn(function() 
+            while getgenv().Config.RemoveFog do 
+                ClearFog()
+                task.wait(1) 
+            end 
+        end) 
+    end
 end)
 
---// LOOPS
+--// AUTO-COLLECTION (PROXIMITY BYPASS)
+task.spawn(function()
+    while task.wait(0.4) do
+        if getgenv().Config.SantaPilot and targetObj then
+            -- This simulates holding the collection key automatically
+            local prompt = targetObj:FindFirstChildWhichIsA("ProximityPrompt", true)
+            if prompt then
+                fireproximityprompt(prompt)
+            end
+        end
+    end
+end)
+
+--// GIFT DETECTION
+DROP_FOLDER.ChildAdded:Connect(function(child)
+    if (child.Name == DROP_NAME or child:FindFirstChild("Bottom")) and not blacklist[child] then 
+        targetObj = child 
+    end
+end)
+
+--// LOOPS & MOVEMENT LOGIC
 task.spawn(function()
     while task.wait(0.15) do 
-        if getgenv().Config.SantaPilot or getgenv().Config.ManualFly or getgenv().Config.Noclip or getgenv().Config.SpeedEnabled then 
+        if getgenv().Config.SantaPilot or getgenv().Config.ManualFly or getgenv().Config.Noclip or getgenv().Config.SpeedEnabled or getgenv().Config.AutoLockOn then 
             StamEvent:FireServer(0.505, "dash") 
         end 
     end
@@ -191,33 +258,92 @@ end)
 RS.Heartbeat:Connect(function()
     local root = getRoot()
     if not root then return end
-    if getgenv().Config.Noclip then for _, v in pairs(LocalPlayer.Character:GetDescendants()) do if v:IsA("BasePart") then v.CanCollide = false end end end
+    
+    if getgenv().Config.Noclip or (getgenv().Config.SantaPilot and targetObj) then 
+        for _, v in pairs(LocalPlayer.Character:GetDescendants()) do 
+            if v:IsA("BasePart") then v.CanCollide = false end 
+        end 
+    end
 
+    -- Priority 1: Santa Pilot
     if getgenv().Config.SantaPilot then
         if targetObj and targetObj.Parent == DROP_FOLDER and not blacklist[targetObj] then
             local p = targetObj:FindFirstChildWhichIsA("BasePart", true)
-            if p then 
-                local targetPosition = p.Position + Vector3.new(0, 5, 0)
-                if (root.Position - targetPosition).Magnitude > 5 then applyMovement(targetPosition)
-                else if root:FindFirstChild("DolphinMove") then root.DolphinMove:Destroy() end root.Velocity = Vector3.zero end
-                return 
+            if p then
+                if (root.Position - p.Position).Magnitude > 4 then
+                    -- Moving to gift
+                    local bv = root:FindFirstChild("DolphinMove") or Instance.new("BodyVelocity")
+                    bv.Name = "DolphinMove"; bv.MaxForce = Vector3.new(1e6, 1e6, 1e6); bv.Parent = root
+                    bv.Velocity = (p.Position - root.Position).Unit * getgenv().Config.FlySpeedPower
+                    root.CFrame = root.CFrame:Lerp(CFrame.new(root.Position, Vector3.new(p.Position.X, root.Position.Y, p.Position.Z)), 0.1)
+                    giftTimer = tick()
+                else
+                    -- Sitting on gift (Auto-Collect loop handles the rest)
+                    if root:FindFirstChild("DolphinMove") then root.DolphinMove:Destroy() end
+                    root.Velocity = Vector3.zero
+                    root.CFrame = p.CFrame * CFrame.new(0, 1, 0)
+                    
+                    if tick() - giftTimer >= (3.2 + math.random() * 0.3) then
+                        visitCount[targetObj] = (visitCount[targetObj] or 0) + 1
+                        if visitCount[targetObj] >= 2 then blacklist[targetObj] = true end
+                        targetObj = nil
+                    end
+                end
+                return
             end
         end
+
+        -- Tracking Sleigh
         local sleigh = workspace:FindFirstChild(TARGET_NAME, true) or workspace:FindFirstChild("Sleigh", true)
         if sleigh then
             local sPart = sleigh:IsA("BasePart") and sleigh or sleigh:FindFirstChildWhichIsA("BasePart", true)
             local goal = (sPart.CFrame * CFrame.new(0, -10, 5)).Position
-            if (root.Position - goal).Magnitude > 5 then applyMovement(goal)
-            else if root:FindFirstChild("DolphinMove") then root.DolphinMove:Destroy() end root.Velocity = Vector3.zero end
+            
+            if (root.Position - goal).Magnitude > 3 then
+                local bv = root:FindFirstChild("DolphinMove") or Instance.new("BodyVelocity")
+                bv.Name = "DolphinMove"; bv.MaxForce = Vector3.new(1e6, 1e6, 1e6); bv.Parent = root
+                local dirVector = (goal - root.Position).Unit
+                if checkForWall(root, dirVector) then
+                     bv.Velocity = (dirVector + Vector3.new(0, 0.8, 0)).Unit * getgenv().Config.FlySpeedPower
+                else
+                     bv.Velocity = dirVector * getgenv().Config.FlySpeedPower
+                end
+                root.CFrame = root.CFrame:Lerp(CFrame.new(root.Position, Vector3.new(goal.X, root.Position.Y, goal.Z)), 0.1)
+            else
+                if root:FindFirstChild("DolphinMove") then root.DolphinMove:Destroy() end
+                root.Velocity = Vector3.zero
+                root.CFrame = root.CFrame:Lerp(CFrame.new(goal, sPart.Position), 0.1)
+            end
         end
-    elseif getgenv().Config.SpeedEnabled then
-        local hum = LocalPlayer.Character:FindFirstChild("Humanoid")
-        if hum and hum.MoveDirection.Magnitude > 0 then
-            root.Velocity = Vector3.new(hum.MoveDirection.X * getgenv().Config.WalkSpeedPower, root.Velocity.Y, hum.MoveDirection.Z * getgenv().Config.WalkSpeedPower)
-        end
-    end
 
-    if getgenv().Config.ManualFly and not getgenv().Config.SantaPilot then
+    -- Priority 2: Auto Lock-On
+    elseif getgenv().Config.AutoLockOn then
+        local target = getNearest()
+        if target then
+            local targetRoot = target:FindFirstChild("HumanoidRootPart")
+            if targetRoot then
+                local goal = (targetRoot.CFrame * CFrame.new(0, 0, FOLLOW_DISTANCE)).Position
+                local bv = root:FindFirstChild("DolphinMove") or Instance.new("BodyVelocity")
+                bv.Name = "DolphinMove"; bv.MaxForce = Vector3.new(1e6, 1e6, 1e6); bv.Parent = root
+                
+                local dirVector = (goal - root.Position)
+                if dirVector.Magnitude > 0.5 then
+                    if checkForWall(root, dirVector.Unit) then
+                        bv.Velocity = (dirVector.Unit + Vector3.new(0, 0.8, 0)).Unit * LOCK_FLY_POWER
+                    else
+                        bv.Velocity = dirVector.Unit * LOCK_FLY_POWER
+                    end
+                else
+                    bv.Velocity = Vector3.zero
+                end
+                root.CFrame = root.CFrame:Lerp(CFrame.new(root.Position, Vector3.new(targetRoot.Position.X, root.Position.Y, targetRoot.Position.Z)), 0.2)
+            end
+        else
+            if root:FindFirstChild("DolphinMove") then root.DolphinMove:Destroy() end
+        end
+
+    -- Priority 3: Manual Fly
+    elseif getgenv().Config.ManualFly then
         local bv = root:FindFirstChild("DolphinMove") or Instance.new("BodyVelocity"); bv.Name = "DolphinMove"; bv.MaxForce = Vector3.new(1e6, 1e6, 1e6); bv.Parent = root
         local moveDir = Vector3.zero
         if UIS:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + Camera.CFrame.LookVector end
@@ -227,6 +353,37 @@ RS.Heartbeat:Connect(function()
         if UIS:IsKeyDown(Enum.KeyCode.Space) then moveDir = moveDir + Vector3.new(0, 1, 0) end
         if UIS:IsKeyDown(Enum.KeyCode.LeftControl) then moveDir = moveDir - Vector3.new(0, 1, 0) end
         bv.Velocity = moveDir.Magnitude > 0 and moveDir.Unit * getgenv().Config.FlySpeedPower or Vector3.zero
+    
+    -- Priority 4: Speed Boost
+    elseif getgenv().Config.SpeedEnabled then
+        local hum = LocalPlayer.Character:FindFirstChild("Humanoid")
+        if hum and hum.MoveDirection.Magnitude > 0 then
+            root.Velocity = Vector3.new(hum.MoveDirection.X * getgenv().Config.WalkSpeedPower, root.Velocity.Y, hum.MoveDirection.Z * getgenv().Config.WalkSpeedPower)
+        end
+    end
+end)
+
+--// KEYBIND (G & V)
+UIS.InputBegan:Connect(function(input, gpe)
+    if gpe then return end
+    if input.KeyCode == Enum.KeyCode.G then
+        getgenv().Config.AutoLockOn = not getgenv().Config.AutoLockOn
+        if ToggleObjects["AutoLockOn"] then ToggleObjects["AutoLockOn"]() end
+    elseif input.KeyCode == Enum.KeyCode.V then
+        getgenv().Config.AutoClicker = not getgenv().Config.AutoClicker
+        if ToggleObjects["AutoClicker"] then ToggleObjects["AutoClicker"]() end
+    end
+end)
+
+--// PERSISTENT ANTI-AFK LOOP
+task.spawn(function()
+    while true do
+        if getgenv().Config.AntiAFK then
+            VIM:SendKeyEvent(true, Enum.KeyCode.RightControl, false, game)
+            task.wait(0.1)
+            VIM:SendKeyEvent(false, Enum.KeyCode.RightControl, false, game)
+        end
+        task.wait(60)
     end
 end)
 
